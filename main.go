@@ -9,9 +9,60 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-var db *sql.DB
+type App struct {
+	DB     *sql.DB
+	Server *http.Server
+}
 
-func hello(w http.ResponseWriter, req *http.Request) {
+func NewApp() (*App, error) {
+	app := &App{}
+
+	db, err := sql.Open("sqlite3", "./data.db")
+	if err != nil {
+		log.WithError(err).Error("failed to open database")
+		return nil, err
+	}
+
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT UNIQUE,
+			password TEXT
+		)
+	`)
+	if err != nil {
+		log.WithError(err).Error("failed to create users table")
+		return nil, err
+	}
+
+	_, err = db.Exec(`
+        INSERT OR IGNORE INTO users
+        (username, password)
+        VALUES
+        ('reza', 'r')
+    `)
+	if err != nil {
+		log.WithError(err).Error("failed to insert sample user")
+		return nil, err
+	}
+
+	app.DB = db
+
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/hello", app.hello)
+	mux.HandleFunc("/login", app.login)
+
+	server := &http.Server{
+		Addr:    ":8090",
+		Handler: mux,
+	}
+
+	app.Server = server
+	return app, nil
+}
+
+func (a *App) hello(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "hello"})
 	log.WithFields(log.Fields{
@@ -20,12 +71,7 @@ func hello(w http.ResponseWriter, req *http.Request) {
 	}).Info("say hello")
 }
 
-type LoginRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
-
-func login(w http.ResponseWriter, req *http.Request) {
+func (a *App) login(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
 		http.Error(w, "invalid method", http.StatusMethodNotAllowed)
 		log.WithFields(log.Fields{
@@ -35,7 +81,10 @@ func login(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	var body LoginRequest
+	var body struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
 	err := json.NewDecoder(req.Body).Decode(&body)
 	if err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)
@@ -44,7 +93,7 @@ func login(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var exists bool
-	err = db.QueryRow(
+	err = a.DB.QueryRow(
 		`SELECT EXISTS(SELECT 1 FROM users WHERE username = ? AND password = ?)`,
 		body.Username, body.Password,
 	).Scan(&exists)
@@ -81,37 +130,11 @@ func main() {
 	})
 	log.SetLevel(log.InfoLevel)
 
-	var err error
-
-	db, err = sql.Open("sqlite3", "./data.db")
+	app, err := NewApp()
 	if err != nil {
-		log.WithError(err).Error("failed to open database")
+		log.WithError(err).Error("canot create app")
 	}
-
-	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS users (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			username TEXT UNIQUE,
-			password TEXT
-		)
-	`)
-	if err != nil {
-		log.WithError(err).Error("failed to create users table")
-	}
-
-	_, err = db.Exec(`
-        INSERT OR IGNORE INTO users
-        (username, password)
-        VALUES
-        ('reza', 'r')
-    `)
-	if err != nil {
-		log.WithError(err).Error("failed to insert sample user")
-	}
-
-	http.HandleFunc("/hello", hello)
-	http.HandleFunc("/login", login)
 
 	log.Info("server started on :8090")
-	http.ListenAndServe(":8090", nil)
+	app.Server.ListenAndServe()
 }
