@@ -3,10 +3,10 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
-	"log"
 	"net/http"
 
 	_ "github.com/mattn/go-sqlite3"
+	log "github.com/sirupsen/logrus"
 )
 
 var db *sql.DB
@@ -14,6 +14,10 @@ var db *sql.DB
 func hello(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "hello"})
+	log.WithFields(log.Fields{
+		"method": req.Method,
+		"path":   req.URL.Path,
+	}).Info("say hello")
 }
 
 type LoginRequest struct {
@@ -23,7 +27,11 @@ type LoginRequest struct {
 
 func login(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
-		http.Error(w, "only POST method allowed", http.StatusMethodNotAllowed)
+		http.Error(w, "invalid method", http.StatusMethodNotAllowed)
+		log.WithFields(log.Fields{
+			"method": req.Method,
+			"path":   req.URL.Path,
+		}).Error("invalid method")
 		return
 	}
 
@@ -31,6 +39,7 @@ func login(w http.ResponseWriter, req *http.Request) {
 	err := json.NewDecoder(req.Body).Decode(&body)
 	if err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)
+		log.WithError(err).Error("invalid json")
 		return
 	}
 
@@ -42,6 +51,7 @@ func login(w http.ResponseWriter, req *http.Request) {
 
 	if err != nil {
 		http.Error(w, "db error", http.StatusInternalServerError)
+		log.WithError(err).Error("database query error")
 		return
 	}
 
@@ -49,18 +59,33 @@ func login(w http.ResponseWriter, req *http.Request) {
 
 	if exists {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		log.WithFields(log.Fields{
+			"method":   req.Method,
+			"path":     req.URL.Path,
+			"username": body.Username,
+		}).Info("login successful")
 	} else {
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(map[string]string{"status": "invalid username or password"})
+		log.WithFields(log.Fields{
+			"method":   req.Method,
+			"path":     req.URL.Path,
+			"username": body.Username,
+		}).Error("login failed")
 	}
 }
 
 func main() {
+	log.SetFormatter(&log.TextFormatter{
+		FullTimestamp: true,
+	})
+	log.SetLevel(log.InfoLevel)
+
 	var err error
 
 	db, err = sql.Open("sqlite3", "./data.db")
 	if err != nil {
-		log.Fatal(err)
+		log.WithError(err).Error("failed to open database")
 	}
 
 	_, err = db.Exec(`
@@ -71,7 +96,7 @@ func main() {
 		)
 	`)
 	if err != nil {
-		log.Fatal(err)
+		log.WithError(err).Error("failed to create users table")
 	}
 
 	_, err = db.Exec(`
@@ -81,12 +106,12 @@ func main() {
         ('reza', 'r')
     `)
 	if err != nil {
-		log.Fatal(err)
+		log.WithError(err).Error("failed to insert sample user")
 	}
 
 	http.HandleFunc("/hello", hello)
 	http.HandleFunc("/login", login)
 
-	log.Println("server started on :8090")
+	log.Info("server started on :8090")
 	http.ListenAndServe(":8090", nil)
 }
