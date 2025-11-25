@@ -1,12 +1,14 @@
 package main
 
 import (
-	"fmt"
+	"encoding/json"
 	"net/http"
 )
 
 func hello(w http.ResponseWriter, req *http.Request) {
-	fmt.Fprintf(w, "hello\n")
+	w.Header().Set("Content-Type", "application/json")
+	resp := map[string]string{"message": "hello"}
+	json.NewEncoder(w).Encode(resp)
 }
 
 func main() {
