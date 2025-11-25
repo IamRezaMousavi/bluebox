@@ -1,6 +1,14 @@
 package main
 
-import log "github.com/sirupsen/logrus"
+import (
+	"context"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	log "github.com/sirupsen/logrus"
+)
 
 func main() {
 	log.SetFormatter(&log.TextFormatter{
@@ -13,6 +21,27 @@ func main() {
 		log.WithError(err).Error("canot create app")
 	}
 
-	log.Info("server started on :8090")
-	app.Server.ListenAndServe()
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		log.Info("server started on :8090")
+		err = app.RunServer()
+		if err != nil {
+			log.WithError(err).Error("server error")
+		}
+	}()
+
+	sig := <-quit
+	log.WithField("signal", sig.String()).Info("received signal")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	err = app.Close(ctx)
+	if err != nil {
+		log.WithError(err).Error("error while closing the app")
+	}
+
+	log.Info("shutdown!")
 }

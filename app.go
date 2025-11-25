@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -34,6 +35,26 @@ func NewApp(addr string, dbPath string) (*App, error) {
 
 	app.Server = server
 	return app, nil
+}
+
+func (app *App) RunServer() error {
+	err := app.Server.ListenAndServe()
+	if err != nil && err != http.ErrServerClosed {
+		return err
+	}
+	return nil
+}
+
+func (app *App) Close(ctx context.Context) error {
+	var err error
+
+	err = app.Server.Shutdown(ctx)
+	if err != nil {
+		return err
+	}
+
+	err = app.DB.Close()
+	return nil
 }
 
 func (app *App) hello(w http.ResponseWriter, req *http.Request) {

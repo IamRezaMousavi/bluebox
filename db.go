@@ -8,7 +8,7 @@ import (
 )
 
 type Database struct {
-	DB *sql.DB
+	*sql.DB
 }
 
 func NewDatabase(path string) (*Database, error) {
@@ -46,7 +46,7 @@ func NewDatabase(path string) (*Database, error) {
 
 func (db *Database) IsUserExists(username string, password string) (bool, error) {
 	var exists bool
-	err := db.DB.QueryRow(
+	err := db.QueryRow(
 		`SELECT EXISTS(SELECT 1 FROM users WHERE username = ? AND password = ?)`,
 		username, password,
 	).Scan(&exists)
