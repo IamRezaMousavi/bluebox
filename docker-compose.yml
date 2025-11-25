@@ -7,17 +7,23 @@ services:
       POSTGRES_PASSWORD: r
       POSTGRES_DB: rezadb
     volumes:
-      - ./data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+      - ./data/db:/var/lib/postgresql/data
+
+  cache:
+    image: redis:8.4.0-alpine3.22
+    container_name: cache_redis
+    volumes:
+      - ./data/cache:/data
 
   app:
     build: .
     container_name: rezaserver
     depends_on:
       - db
+      - cache
     environment:
       DATABASE_URL: postgres://reza:r@db:5432/rezadb?sslmode=disable
+      CACHE_ADDR: cache:6379
     ports:
       - "8090:8090"
 

@@ -16,9 +16,10 @@ func main() {
 	})
 	log.SetLevel(log.InfoLevel)
 
-	app, err := NewApp(":8090", os.Getenv("DATABASE_URL"))
+	app, err := NewApp(":8090", os.Getenv("DATABASE_URL"), os.Getenv("CACHE_ADDR"))
 	if err != nil {
 		log.WithError(err).Error("canot create app")
+		os.Exit(1)
 	}
 
 	quit := make(chan os.Signal, 1)

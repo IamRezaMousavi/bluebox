@@ -52,7 +52,7 @@ func NewDatabase(dsn string) (*Database, error) {
 		VALUES
 		('reza', 'r')
 		ON CONFLICT (username) DO NOTHING
-	`)
+	`) // we should use hashing algs for password
 	if err != nil {
 		log.WithError(err).Error("failed to insert sample user")
 		return nil, err

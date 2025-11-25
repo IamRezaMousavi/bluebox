@@ -10,10 +10,11 @@ import (
 
 type App struct {
 	DB     *Database
+	C      *Cache
 	Server *http.Server
 }
 
-func NewApp(addr string, dbPath string) (*App, error) {
+func NewApp(addr string, dbPath string, cacheAddr string) (*App, error) {
 	app := &App{}
 
 	db, err := NewDatabase(dbPath)
@@ -22,10 +23,17 @@ func NewApp(addr string, dbPath string) (*App, error) {
 	}
 	app.DB = db
 
+	cache, err := NewCache(cacheAddr)
+	if err != nil {
+		return nil, err
+	}
+	app.C = cache
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/hello", app.hello)
 	mux.HandleFunc("/login", app.login)
+	mux.HandleFunc("/validate", app.otpValidate)
 
 	server := &http.Server{
 		Addr:    addr,
@@ -53,6 +61,11 @@ func (app *App) Close(ctx context.Context) error {
 	}
 
 	err = app.DB.Close()
+	if err != nil {
+		return err
+	}
+
+	err = app.C.Close()
 	return nil
 }
 
@@ -96,12 +109,23 @@ func (app *App) login(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if exists {
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		otp := generateOTP()
+		err := app.C.SetOTP(body.Username, otp)
+		if err != nil {
+			http.Error(w, "cache error", http.StatusInternalServerError)
+			log.WithError(err).Error("failed to store user otp")
+			return
+		}
+
+		json.NewEncoder(w).Encode(map[string]string{
+			"status": "ok",
+			"otp":    otp,
+		})
 		log.WithFields(log.Fields{
 			"method":   req.Method,
 			"path":     req.URL.Path,
 			"username": body.Username,
-		}).Info("login successful")
+		}).Info("auth successful")
 	} else {
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(map[string]string{"status": "invalid username or password"})
@@ -109,6 +133,49 @@ func (app *App) login(w http.ResponseWriter, req *http.Request) {
 			"method":   req.Method,
 			"path":     req.URL.Path,
 			"username": body.Username,
-		}).Error("login failed")
+		}).Error("auth failed")
 	}
+}
+
+func (app *App) otpValidate(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodPost {
+		http.Error(w, "invalid method", http.StatusMethodNotAllowed)
+		log.WithFields(log.Fields{
+			"method": req.Method,
+			"path":   req.URL.Path,
+		}).Error("invalid method")
+		return
+	}
+
+	var body struct {
+		Username string `json:"username"`
+		Otp      string `json:"otp"`
+	}
+	err := json.NewDecoder(req.Body).Decode(&body)
+	if err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		log.WithError(err).Error("invalid json")
+		return
+	}
+
+	storedOtp, err := app.C.GetOTP(body.Username)
+	if err != nil {
+		http.Error(w, "otp expired or not found", http.StatusUnauthorized)
+		log.WithField("username", body.Username).WithError(err).Error("user otp expired or not found")
+		return
+	}
+
+	if storedOtp != body.Otp {
+		http.Error(w, "invalid otp", http.StatusUnauthorized)
+		log.WithField("username", body.Username).WithError(err).Error("invalid otp")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	log.WithFields(log.Fields{
+		"method":   req.Method,
+		"path":     req.URL.Path,
+		"username": body.Username,
+	}).Info("login successful")
 }
