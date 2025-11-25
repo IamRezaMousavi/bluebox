@@ -16,7 +16,7 @@ func main() {
 	})
 	log.SetLevel(log.InfoLevel)
 
-	app, err := NewApp(":8090", "./data.db")
+	app, err := NewApp(":8090", os.Getenv("DATABASE_URL"))
 	if err != nil {
 		log.WithError(err).Error("canot create app")
 	}

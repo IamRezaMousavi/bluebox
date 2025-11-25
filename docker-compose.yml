@@ -1,0 +1,23 @@
+services:
+  db:
+    image: postgres:17.0-alpine3.20
+    container_name: db_postgres
+    environment:
+      POSTGRES_USER: reza
+      POSTGRES_PASSWORD: r
+      POSTGRES_DB: rezadb
+    volumes:
+      - ./data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  app:
+    build: .
+    container_name: rezaserver
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgres://reza:r@db:5432/rezadb?sslmode=disable
+    ports:
+      - "8090:8090"
+

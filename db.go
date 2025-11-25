@@ -2,8 +2,9 @@ package main
 
 import (
 	"database/sql"
+	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -11,16 +12,31 @@ type Database struct {
 	*sql.DB
 }
 
-func NewDatabase(path string) (*Database, error) {
-	db, err := sql.Open("sqlite3", path)
+func NewDatabase(dsn string) (*Database, error) {
+	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		log.WithError(err).Error("failed to open database")
 		return nil, err
 	}
 
+	for i := 0; i < 10; i++ {
+		err = db.Ping()
+		if err == nil {
+			break
+		}
+		log.Warn("waiting for database...")
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	err = db.Ping()
+	if err != nil {
+		log.WithError(err).Error("failed to ping database")
+		return nil, err
+	}
+
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS users (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			id SERIAL PRIMARY KEY,
 			username TEXT UNIQUE,
 			password TEXT
 		)
@@ -31,10 +47,11 @@ func NewDatabase(path string) (*Database, error) {
 	}
 
 	_, err = db.Exec(`
-		INSERT OR IGNORE INTO users
+		INSERT INTO users
 		(username, password)
 		VALUES
 		('reza', 'r')
+		ON CONFLICT (username) DO NOTHING
 	`)
 	if err != nil {
 		log.WithError(err).Error("failed to insert sample user")
@@ -47,12 +64,8 @@ func NewDatabase(path string) (*Database, error) {
 func (db *Database) IsUserExists(username string, password string) (bool, error) {
 	var exists bool
 	err := db.QueryRow(
-		`SELECT EXISTS(SELECT 1 FROM users WHERE username = ? AND password = ?)`,
+		`SELECT EXISTS(SELECT 1 FROM users WHERE username = $1 AND password = $2)`,
 		username, password,
 	).Scan(&exists)
-	if err != nil {
-		return false, err
-	}
-
-	return exists, nil
+	return exists, err
 }
