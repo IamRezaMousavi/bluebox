@@ -25,7 +25,7 @@ func NewDatabase(dsn string) (*Database, error) {
 			break
 		}
 		log.Warn("waiting for database...")
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(time.Second)
 	}
 
 	err = db.Ping()

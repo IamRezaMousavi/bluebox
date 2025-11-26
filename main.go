@@ -36,7 +36,7 @@ func main() {
 	sig := <-quit
 	log.WithField("signal", sig.String()).Info("received signal")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
 	err = app.Close(ctx)

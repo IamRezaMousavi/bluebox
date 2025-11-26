@@ -25,7 +25,7 @@ func NewCache(addr string) (*Cache, error) {
 			break
 		}
 		log.Warn("waiting for cache server...")
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(time.Second)
 	}
 
 	err := rdb.Ping(ctx).Err()
