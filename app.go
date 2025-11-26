@@ -33,7 +33,8 @@ func NewApp(addr string, dbPath string, cacheAddr string) (*App, error) {
 
 	mux.HandleFunc("/hello", app.hello)
 	mux.HandleFunc("/login", app.login)
-	mux.HandleFunc("/validate", app.otpValidate)
+	mux.HandleFunc("/validate", app.validate)
+	mux.HandleFunc("/protected", app.protected)
 
 	server := &http.Server{
 		Addr:    addr,
@@ -137,7 +138,7 @@ func (app *App) login(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (app *App) otpValidate(w http.ResponseWriter, req *http.Request) {
+func (app *App) validate(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
 		http.Error(w, "invalid method", http.StatusMethodNotAllowed)
 		log.WithFields(log.Fields{
@@ -171,11 +172,51 @@ func (app *App) otpValidate(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	tokenString, err := createToken(body.Username)
+	if err != nil {
+		http.Error(w, "server error", http.StatusInternalServerError)
+		log.WithField("username", body.Username).WithError(err).Error("create token error")
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "ok",
+		"token":  tokenString,
+	})
 	log.WithFields(log.Fields{
 		"method":   req.Method,
 		"path":     req.URL.Path,
 		"username": body.Username,
-	}).Info("login successful")
+	}).Info("validate successful")
+}
+
+func (app *App) protected(w http.ResponseWriter, req *http.Request) {
+	tokenString := req.Header.Get("Authorization")
+	if tokenString == "" {
+		http.Error(w, "missing authorization header", http.StatusUnauthorized)
+		log.WithFields(log.Fields{
+			"method": req.Method,
+			"path":   req.URL.Path,
+		}).Error("missing auth header")
+		return
+	}
+
+	tokenString = tokenString[len("Bearer "):]
+	err := verifyToken(tokenString)
+	if err != nil {
+		http.Error(w, "invalid token", http.StatusUnauthorized)
+		log.WithFields(log.Fields{
+			"method": req.Method,
+			"path":   req.URL.Path,
+		}).Error("invalid token")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	log.WithFields(log.Fields{
+		"method": req.Method,
+		"path":   req.URL.Path,
+	}).Info("protected called")
 }
